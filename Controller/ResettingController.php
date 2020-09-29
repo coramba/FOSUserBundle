@@ -20,7 +20,7 @@ use FOS\UserBundle\FOSUserEvents;
 use FOS\UserBundle\Mailer\MailerInterface;
 use FOS\UserBundle\Model\UserManagerInterface;
 use FOS\UserBundle\Util\TokenGeneratorInterface;
-use Symfony\Bundle\FrameworkBundle\Controller\Controller;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -34,7 +34,7 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * @final
  */
-class ResettingController extends Controller
+class ResettingController extends AbstractController
 {
     private $eventDispatcher;
     private $formFactory;
@@ -48,7 +48,12 @@ class ResettingController extends Controller
     private $retryTtl;
 
     /**
-     * @param int $retryTtl
+     * @param EventDispatcherInterface $eventDispatcher
+     * @param FactoryInterface         $formFactory
+     * @param UserManagerInterface     $userManager
+     * @param TokenGeneratorInterface  $tokenGenerator
+     * @param MailerInterface          $mailer
+     * @param int                      $retryTtl
      */
     public function __construct(EventDispatcherInterface $eventDispatcher, FactoryInterface $formFactory, UserManagerInterface $userManager, TokenGeneratorInterface $tokenGenerator, MailerInterface $mailer, $retryTtl)
     {
@@ -71,6 +76,8 @@ class ResettingController extends Controller
     /**
      * Request reset user password: submit form and send email.
      *
+     * @param Request $request
+     *
      * @return Response
      */
     public function sendEmailAction(Request $request)
@@ -80,7 +87,7 @@ class ResettingController extends Controller
         $user = $this->userManager->findUserByUsernameOrEmail($username);
 
         $event = new GetResponseNullableUserEvent($user, $request);
-        $this->eventDispatcher->dispatch(FOSUserEvents::RESETTING_SEND_EMAIL_INITIALIZE, $event);
+        $this->eventDispatcher->dispatch($event,FOSUserEvents::RESETTING_SEND_EMAIL_INITIALIZE);
 
         if (null !== $event->getResponse()) {
             return $event->getResponse();
@@ -88,7 +95,7 @@ class ResettingController extends Controller
 
         if (null !== $user && !$user->isPasswordRequestNonExpired($this->retryTtl)) {
             $event = new GetResponseUserEvent($user, $request);
-            $this->eventDispatcher->dispatch(FOSUserEvents::RESETTING_RESET_REQUEST, $event);
+            $this->eventDispatcher->dispatch($event,FOSUserEvents::RESETTING_RESET_REQUEST);
 
             if (null !== $event->getResponse()) {
                 return $event->getResponse();
@@ -99,7 +106,7 @@ class ResettingController extends Controller
             }
 
             $event = new GetResponseUserEvent($user, $request);
-            $this->eventDispatcher->dispatch(FOSUserEvents::RESETTING_SEND_EMAIL_CONFIRM, $event);
+            $this->eventDispatcher->dispatch($event,FOSUserEvents::RESETTING_SEND_EMAIL_CONFIRM);
 
             if (null !== $event->getResponse()) {
                 return $event->getResponse();
@@ -110,7 +117,7 @@ class ResettingController extends Controller
             $this->userManager->updateUser($user);
 
             $event = new GetResponseUserEvent($user, $request);
-            $this->eventDispatcher->dispatch(FOSUserEvents::RESETTING_SEND_EMAIL_COMPLETED, $event);
+            $this->eventDispatcher->dispatch($event,FOSUserEvents::RESETTING_SEND_EMAIL_COMPLETED);
 
             if (null !== $event->getResponse()) {
                 return $event->getResponse();
@@ -122,6 +129,8 @@ class ResettingController extends Controller
 
     /**
      * Tell the user to check his email provider.
+     *
+     * @param Request $request
      *
      * @return Response
      */
@@ -142,7 +151,8 @@ class ResettingController extends Controller
     /**
      * Reset user password.
      *
-     * @param string $token
+     * @param Request $request
+     * @param string  $token
      *
      * @return Response
      */
@@ -155,7 +165,7 @@ class ResettingController extends Controller
         }
 
         $event = new GetResponseUserEvent($user, $request);
-        $this->eventDispatcher->dispatch(FOSUserEvents::RESETTING_RESET_INITIALIZE, $event);
+        $this->eventDispatcher->dispatch($event,FOSUserEvents::RESETTING_RESET_INITIALIZE);
 
         if (null !== $event->getResponse()) {
             return $event->getResponse();
@@ -168,7 +178,7 @@ class ResettingController extends Controller
 
         if ($form->isSubmitted() && $form->isValid()) {
             $event = new FormEvent($form, $request);
-            $this->eventDispatcher->dispatch(FOSUserEvents::RESETTING_RESET_SUCCESS, $event);
+            $this->eventDispatcher->dispatch($event,FOSUserEvents::RESETTING_RESET_SUCCESS);
 
             $this->userManager->updateUser($user);
 
@@ -178,8 +188,8 @@ class ResettingController extends Controller
             }
 
             $this->eventDispatcher->dispatch(
-                FOSUserEvents::RESETTING_RESET_COMPLETED,
-                new FilterUserResponseEvent($user, $request, $response)
+                new FilterUserResponseEvent($user, $request, $response),
+                FOSUserEvents::RESETTING_RESET_COMPLETED
             );
 
             return $response;

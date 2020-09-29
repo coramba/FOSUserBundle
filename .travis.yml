@@ -1,41 +1,82 @@
 language: php
 
-php:
-  - 5.5
-  - 5.6
-  - 7.1
-  - 7.2
-  - 7.3
+cache:
+  directories:
+    - $HOME/.composer/cache/files
+    - $HOME/symfony-bridge/.phpunit
 
 env:
   global:
-    - TARGET=test
+    - PHPUNIT_FLAGS="-v"
+    - SIMPLE_PHPUNIT_INSTALL="true"
+    - SYMFONY_PHPUNIT_DIR="$HOME/symfony-bridge/.phpunit"
 
 matrix:
   fast_finish: true
   include:
-    - php: 7.0
-      env: TARGET=cs_dry_run
-    - php: 5.5
-      env: COMPOSER_FLAGS="--prefer-lowest"
+      # Minimum supported dependencies with the latest and oldest PHP version
+#  @php version
+#    - php: 5.6
+#      env: COMPOSER_FLAGS="--prefer-stable --prefer-lowest" SYMFONY_DEPRECATIONS_HELPER="max[self]=0" SIMPLE_PHPUNIT_INSTALL=''
+# @The each() function is deprecated. This message will be suppressed on further calls
+#    - php: 7.2
+#      env: COMPOSER_FLAGS="--prefer-stable --prefer-lowest" SYMFONY_DEPRECATIONS_HELPER="max[self]=0" SIMPLE_PHPUNIT_INSTALL=''
+# @No output has been received in the last 10m0s, this potentially indicates a stalled build or something wrong with the build itself.
+#    - php: 7.4
+#      env: COMPOSER_FLAGS="--prefer-stable --prefer-lowest" SYMFONY_DEPRECATIONS_HELPER="max[self]=0"
+
+#      # Test the latest stable release
+# @php version
+#    - php: 5.6
+#      env: COMPOSER_FLAGS="--prefer-lowest" SIMPLE_PHPUNIT_INSTALL=''
+    - php: 7.2
+    - php: 7.4
+      env: COVERAGE=true PHPUNIT_FLAGS="-v --coverage-text"
+
+      # Test LTS versions. This makes sure we do not use Symfony packages with version greater
+      # than 2 or 3 respectively. Read more at https://github.com/symfony/lts
     - php: 5.6
-      env: DEPENDENCIES="symfony/lts:^2"
-    - php: 7.1
-      env: DEPENDENCIES="symfony/lts:^3"
+      env: DEPENDENCIES="symfony/lts:^2" PACKAGE_VERSION=^2.
+    - php: 5.6
+      env: DEPENDENCIES="symfony/lts:^3" PACKAGE_VERSION=^2.
+# @deprecate
+    - php: 7.2
+      env: DEPENDENCIES="symfony/lts:^2" PACKAGE_VERSION=^2. SYMFONY_DEPRECATIONS_HELPER="max[self]=0"
+# @deprecate
+    - php: 7.2
+      env: DEPENDENCIES="symfony/lts:^3" PACKAGE_VERSION=^2. SYMFONY_DEPRECATIONS_HELPER="max[self]=0"
+# @conflict
+#    - php: 7.4
+#      env: DEPENDENCIES="symfony/lts:^2" PACKAGE_VERSION=^2.
+# @deprecate
+    - php: 7.4
+      env: DEPENDENCIES="symfony/lts:^3" PACKAGE_VERSION=^2. SYMFONY_DEPRECATIONS_HELPER="max[self]=0"
 
-sudo: false
+      # Latest commit to master
+    - php: 7.4
+      env: STABILITY="dev"  SYMFONY_DEPRECATIONS_HELPER="max[self]=0"
 
-cache:
-  directories:
-    - $HOME/.composer/cache
+  allow_failures:
+      # Dev-master is allowed to fail.
+    - env: STABILITY="dev"
 
 before_install:
   - echo "memory_limit=4G" >> ~/.phpenv/versions/$(phpenv version-name)/etc/conf.d/travis.ini
-  # To be removed when this issue will be resolved: https://github.com/composer/composer/issues/5355
-  - if [[ "$COMPOSER_FLAGS" == *"--prefer-lowest"* ]]; then composer update --prefer-dist --no-interaction --prefer-stable --quiet; fi
-  - if [ "$DEPENDENCIES" != "" ]; then composer require --no-update $DEPENDENCIES; fi;
+  - if ! [ -z "$PACKAGE_VERSION" ]; then git pull --tags; export TAG=$(git tag 2> /dev/null | grep $(git tag | sed -e 's/^.//' | grep "$PACKAGE_VERSION" | tail -n1)); fi;
+  - echo ${TAG}
+  - if ! [ -z "$TAG" ]; then git checkout tags/${TAG} -b ${TAG}; fi;
+  - if [[ $COVERAGE != true ]]; then phpenv config-rm xdebug.ini || true; fi
+  - if ! [ -z "$STABILITY" ]; then composer config minimum-stability ${STABILITY}; fi;
+  - if ! [ -v "$DEPENDENCIES" ]; then composer require --no-update ${DEPENDENCIES}; fi;
 
-install: composer update --prefer-dist --no-interaction $COMPOSER_FLAGS
+install:
+  - echo ${COMPOSER_FLAGS}
+  - composer update ${COMPOSER_FLAGS} --prefer-dist --no-interaction
+  - if ! [ -z "$SIMPLE_PHPUNIT_INSTALL" ]; then ./vendor/bin/simple-phpunit install; fi;
 
 script:
- - make $TARGET
+  - composer validate --strict --no-check-lock
+  # simple-phpunit is the PHPUnit wrapper provided by the PHPUnit Bridge component and
+  # it helps with testing legacy code and deprecations (composer require symfony/phpunit-bridge)
+  #- ./vendor/bin/simple-phpunit $PHPUNIT_FLAGS
+  - ./vendor/bin/phpunit $PHPUNIT_FLAGS
